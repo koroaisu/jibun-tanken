@@ -1,0 +1,4 @@
+# 架空の会話の接続確認にのみ使用。コピー先 .dev.vars はGit対象外。
+# 本番では wrangler secret put で登録し、ブラウザには渡さない。
+GEMINI_API_KEY=replace-with-your-key
+RATE_LIMIT_SALT=replace-with-a-long-random-string

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#f7f5ef">
+  <title>自分探検 — あなたの景色を、少しずつ。</title>
+  <link rel="stylesheet" href="styles.css?v=20261028-8">
+  <script src="app.js?v=20261028-8" defer></script>
+</head>
+<body>
+  <header class="site-header"><a href="./" aria-label="自分探検 ホーム"><span class="brand-mark" aria-hidden="true">♧</span><span class="header-name">自分探検</span></a><details class="home-menu"><summary aria-label="メニューを開く"><span></span><span></span><span></span></summary><nav aria-label="ページ案内"><a href="#journey-guide">探検の流れ</a><a href="#about-journey">この体験について</a><a href="#privacy-info">記録とプライバシー</a></nav></details></header>
+  <main>
+    <p id="storage-notice" class="notice" role="status" hidden></p>
+    <section id="welcome" aria-labelledby="welcome-title">
+      <div class="home-hero"><p class="eyebrow">A LITTLE JOURNEY INTO YOU</p><h1 id="welcome-title">自分探検<span>パーソナル</span></h1><p class="hero-tagline">「自分でも知らなかった自分」に<br class="mobile-break">出会っていく、小さな旅。</p><img class="hero-art" src="assets/exploration-hero.png" alt="懐中電灯を手に、案内役と一緒に森の小道を歩く探検者" width="1536" height="1024"><span class="hero-caption">答えを探すより、<br>心に浮かぶ景色をひとつ。</span><a class="hero-down" href="#journey-guide" aria-label="探検の流れを見る">↓</a></div>
+      <section id="journey-guide" class="journey-guide" aria-label="探検の流れ"><article><span class="guide-number">1</span><h2>まず、景色を<br>集める</h2><div class="guide-art past-art" aria-hidden="true">❀ <span>♧</span></div><p>好きなこと。心地よい時間。<br>なんだか気になること。</p><small>今回できること</small></article><article><span class="guide-number">2</span><h2>3つの時間を<br>重ねてみる</h2><div class="time-layers" aria-hidden="true"><span>過去</span><span>現在</span><span>未来</span></div><p>過去・現在・未来の景色に、<br>どんなつながりがあるだろう。</p><small>次のパートで準備予定</small></article><article><span class="guide-number">3</span><h2>「自分の<br>地図」へ</h2><div class="folded-map" aria-hidden="true">♧<span>⌁</span>⚑</div><p>集めた景色を眺めながら、<br>自分で気づいていく。</p><small>これから目指す体験</small></article></section>
+      <section id="about-journey" class="home-about"><div><p class="eyebrow">A LIGHT, NOT AN ANSWER</p><h2>探検を照らす、<br>小さな懐中電灯。</h2><p>正解を決めたり、あなたを診断したりするための時間ではありません。言葉を交わしながら、自分の中にある景色を少しずつ集めます。</p></div><div class="home-note"><span aria-hidden="true">✧</span><h2>うまく話そうと<br>しなくて、大丈夫。</h2><p>ひと言でも、思いつくままでも。答えにくい問いはスキップして、自分のペースで進められます。</p></div></section>
+      <div class="welcome-note"><h2>いまは、景色集めを体験できます。</h2><p>今回は固定質問6つで進む体験版です。AIによる対話や診断は行いません。「景色をつなぐ」パートは、これから準備していきます。</p></div>
+      <p id="privacy-info" class="privacy">記録はこのブラウザの中だけに保存され、外部へ送信されません。共用端末では利用後に記録を削除してください。ブラウザのデータ消去でも記録は消えます。</p>
+      <div class="home-start"><button id="start" class="primary wide" type="button">探検をはじめる <span aria-hidden="true">↗</span></button><p class="footnote">途中で閉じても、ここから続きを。</p></div>
+    </section>
+    <section id="chat" aria-labelledby="chat-title" hidden>
+      <div class="section-heading"><span class="session-emblem" aria-hidden="true"><img src="assets/lantern.svg" alt="" width="28" height="38"></span><div class="session-heading"><p class="eyebrow">PART 01 · 景色を集める</p><h1 id="chat-title" tabindex="-1">自分探検セッション</h1><span id="step-label" class="step-label"></span></div><div class="navigator-badge" aria-hidden="true"><img src="assets/navigator.svg" width="38" height="38" alt=""><small>ナビゲーター</small></div></div>
+      <progress id="progress" max="6" value="0" aria-label="回答済みの質問数"></progress>
+      <p class="hint">「なんか好き」「なんか気になる」。小さな感覚も、あなたの景色。</p>
+      <nav class="session-tools" aria-label="探検メニュー"><button id="open-journal" type="button"><span aria-hidden="true">♧</span>集めた景色</button><button id="open-settings" type="button"><span aria-hidden="true">⚙</span>設定</button><button id="open-help" type="button"><span aria-hidden="true">✧</span>使い方</button></nav>
+      <div id="messages" class="messages" role="log" aria-label="景色集めの会話" aria-live="polite"><button id="skip" class="text-button" type="button">この問いは、ひとまずスキップ</button></div>
+      <form id="answer-form"><label for="answer">いま浮かんだ言葉を</label><textarea id="answer" rows="1" maxlength="2000" placeholder="自然な言葉で、あなたの景色を…"></textarea><div class="compose-footer"><span id="count">0 / 2000</span><button class="primary" type="submit" aria-label="言葉を送る"><span aria-hidden="true">➤</span></button></div></form>
+    </section>
+    <section id="arrival" class="arrival" aria-labelledby="arrival-title" hidden>
+      <div class="arrival-scenery" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="arrival-copy"><p class="eyebrow">YOUR LITTLE COLLECTION</p><h1 id="arrival-title" tabindex="-1">景色が<br>集まりました<span class="arrival-smile">😊</span></h1><p><span id="arrival-summary"></span></p><div id="scene-fragments" class="scene-fragments" aria-label="集まった景色のかけら"></div><a class="map-link" href="#result">あなたの景色を、ひらいてみる <span aria-hidden="true">↓</span></a></div>
+    </section>
+    <section id="result" aria-labelledby="result-title" hidden><p class="eyebrow">PART 01 / YOUR COLLECTION</p><h1 id="result-title" tabindex="-1">こんな景色が、あなたの中に。</h1><p class="intro">懐かしいことも、いまの気持ちも、これからのことも。<br>気になる一枚をタップして、あなたの言葉を眺めてみてください。</p><div id="cards" class="scene-gallery"></div><aside class="next-part"><p class="eyebrow">NEXT / PART 02</p><h2>いつか、この景色のつながりを。</h2><p>景色を集める探検は、ここでひと休み。<br>次のパートでは、過去・現在・未来を重ねて眺めます。</p><span>「景色をつなぐ」は、これから準備していきます。</span></aside><p class="privacy">言葉は要約・診断せず、そのまま載せています。<br>この景色は、このブラウザでいつでも見返せます。</p></section>
+    <footer><span>自分の歩幅で、ひとつずつ。</span><button id="delete" class="text-button danger" type="button" hidden>記録をすべて削除</button></footer>
+  </main>
+  <dialog id="journal-dialog" aria-labelledby="journal-title"><p class="eyebrow">YOUR LITTLE COLLECTION</p><h2 id="journal-title">ここまでに集めた景色</h2><div id="journal-scenes"></div><form method="dialog"><button class="secondary" type="submit">会話に戻る</button></form></dialog>
+  <dialog id="settings-dialog" aria-labelledby="settings-title"><h2 id="settings-title">記録とプライバシー</h2><p>言葉はこのブラウザだけに保存しています。外部への送信や端末間の同期はありません。</p><p>削除すると、書きかけ・回答・集めた景色がすべて消えます。</p><div id="settings-actions"></div><form method="dialog"><button class="secondary" type="submit">会話に戻る</button></form></dialog>
+  <dialog id="help-dialog" aria-labelledby="help-title"><h2 id="help-title">自分の歩幅で、ひとつずつ。</h2><p>いまは「景色を集める」パート。固定の6つの問いを道しるべに、好きなことや心に浮かぶことを言葉にしてみてください。</p><p>答えたくない問いはスキップできます。会話をタップするとキーボードを閉じられます。途中で閉じても、同じブラウザで続きを再開できます。</p><p>AIによる対話や診断は行わない体験版です。「景色をつなぐ」は今後の予定です。</p><form method="dialog"><button class="secondary" type="submit">会話に戻る</button></form></dialog>
+  <dialog id="delete-dialog"><h2>記録を削除しますか？</h2><p>回答・書きかけの言葉・景色の地図を、このブラウザから削除します。元に戻すことはできません。</p><div class="dialog-actions"><button id="cancel-delete" class="secondary" type="button">やめる</button><button id="confirm-delete" class="primary" type="button">すべて削除する</button></div><p id="delete-error" role="alert" hidden></p></dialog>
+</body>
+</html>
