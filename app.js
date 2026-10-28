@@ -1,6 +1,7 @@
 "use strict";
 (() => {
   const KEY = "jibun-tanken-v1";
+  const $ = id => document.getElementById(id);
   const questions = [
     { era: "過去", title: "心に残る景色", text: "これまでの中で、ふと心に浮かぶ場面はありますか？ 小さな出来事でも、好きだった時間でも。" },
     { era: "過去", title: "大切だったこと", text: "その頃、大切にしていたことや、好きだったことはありますか？ 思い出せる範囲で大丈夫です。" },
@@ -9,289 +10,173 @@
     { era: "未来", title: "これからの景色", text: "これから、どんな時間を過ごせたらいいなと思いますか？ はっきりした目標でなくても大丈夫です。" },
     { era: "未来", title: "小さな一歩", text: "その景色に向けて、試してみたいことはありますか？ まだ決めずに、ここで休んでも大丈夫です。" }
   ];
-  const $ = id => document.getElementById(id);
-  const skipButton = $("skip");
   const fresh = () => ({ version: 1, started: false, answers: [], draft: "" });
   let state = fresh();
   let storageBroken = false;
-  let replying = false;
+  let busy = false;
   let replyTimer;
-  const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  function lockComposer(locked) {
-    replying = locked;
-
-    $("skip").disabled = locked;
-    $("answer-form").querySelector("[type=submit]").disabled = locked;
-  }
-  function notice(text) { $("storage-notice").textContent = text; $("storage-notice").hidden = false; }
+  let viewportFrame;
+  let scrollFrame;
+  let recoveryTimers = [];
+  let followingLatest = true;
+  let deleteOpener;
+  const complete = () => state.answers.length === questions.length;
+  function notify(text) { $("storage-notice").textContent = text; $("storage-notice").hidden = false; }
   function valid(data) {
-    return data && data.version === 1 && typeof data.started === "boolean" && Array.isArray(data.answers) && data.answers.length <= questions.length && data.answers.every(a => a === null || (typeof a === "string" && a.length <= 2000 && a.trim().length > 0)) && typeof data.draft === "string" && data.draft.length <= 2000 && (data.started || (data.answers.length === 0 && data.draft === ""));
+    return data && data.version === 1 && typeof data.started === "boolean" && Array.isArray(data.answers) && data.answers.length <= 6 && data.answers.every(a => a === null || (typeof a === "string" && a.trim() && a.length <= 2000)) && typeof data.draft === "string" && data.draft.length <= 2000 && (data.started || (!data.answers.length && !data.draft));
   }
   try {
     const raw = localStorage.getItem(KEY);
     if (raw !== null) {
-      try {
-        const data = JSON.parse(raw);
-        if (!valid(data)) throw new Error("Invalid record");
-        state = data;
-      } catch {
-        storageBroken = true;
-        notice("保存された記録を読み込めませんでした。元の記録を上書きしないよう、今回は保存せずに進めます。「記録をすべて削除」で保存を再開できます。");
-      }
+      try { const saved = JSON.parse(raw); if (!valid(saved)) throw Error(); state = saved; }
+      catch { storageBroken = true; notify("保存された記録を読み込めませんでした。元の記録を上書きせず、今回は保存なしで進めます。記録を削除すると保存を再開できます。"); }
     }
-  } catch { storageBroken = true; notice("このブラウザでは保存を利用できません。画面を閉じると今回の記録は失われます。"); }
+  } catch { storageBroken = true; notify("このブラウザでは保存を利用できません。画面を閉じると今回の記録は失われます。"); }
   function save() {
     if (storageBroken) return;
     try { localStorage.setItem(KEY, JSON.stringify(state)); }
-    catch { storageBroken = true; notice("記録を保存できませんでした。画面を閉じると最新の回答が失われる可能性があります。この画面では探検を続けられます。"); }
+    catch { storageBroken = true; notify("記録を保存できませんでした。画面を閉じると最新の言葉が失われる可能性があります。"); }
   }
-  function element(tag, className, text) {
-    const el = document.createElement(tag);
-    if (className) el.className = className;
-    if (text !== undefined) el.textContent = text;
-    return el;
+  function node(tag, cls, text) { const el = document.createElement(tag); if (cls) el.className = cls; if (text !== undefined) el.textContent = text; return el; }
+  function leaf() { const el = node("span", "leaf-mark leaf-mark--small"); el.setAttribute("aria-hidden", "true"); el.append(node("span"), node("span")); return el; }
+  function addMessage(text, who, animate = false) {
+    const el = node("div", "message message--" + who + (animate ? " is-new" : ""));
+    if (who === "guide") { const avatar = node("div", "message__avatar"); avatar.append(leaf()); el.append(avatar); }
+    const content = node("div", "message__content");
+    if (who === "guide") content.append(node("span", "", "森の案内人"));
+    content.append(node("p", "", text)); el.append(content); $("messages").append(el); return el;
   }
-  let scrollFrame = 0;
-  let viewportFrame = 0;
-  let followingLatest = true;
-  const deleteHome = $("delete").parentElement;
-  function followConversation() {
+  function follow() {
     cancelAnimationFrame(scrollFrame);
     scrollFrame = requestAnimationFrame(() => {
       if ($("chat").hidden) return;
-      const messages = $("messages");
-      // キーボードのアニメーションとページ全体のスムーズスクロールを競合させない。
-      const bottom = messages.scrollHeight - messages.clientHeight;
-      if (Math.abs(messages.scrollTop - bottom) > 1) messages.scrollTop = bottom;
+      const area = $("conversation-scroll");
+      area.scrollTop = Math.max(0, area.scrollHeight - area.clientHeight);
       followingLatest = true;
     });
   }
-  function fitChatViewport() {
+  function fitViewport() {
     cancelAnimationFrame(viewportFrame);
     viewportFrame = requestAnimationFrame(() => {
       if ($("chat").hidden) return;
-      const viewport = window.visualViewport;
-      const height = Math.round(viewport?.height || innerHeight);
+      const vv = window.visualViewport;
+      const height = Math.round(vv?.height || innerHeight);
       const layoutHeight = Math.max(document.documentElement.clientHeight, innerHeight);
-      const keyboardVisible = document.activeElement === $("answer") && layoutHeight - height > 100;
-      // キーボードで可視領域が縮み、上へパンした間だけ補正する。
-      // フォーカスが外れた後や高さが戻った後の古いoffsetTopは採用しない。
-      const top = keyboardVisible ? Math.max(0, Math.min(Math.round(viewport?.offsetTop || 0), layoutHeight - height)) : 0;
+      const keyboard = document.activeElement === $("answer") && layoutHeight - height > 100;
+      const top = keyboard ? Math.max(0, Math.min(Math.round(vv?.offsetTop || 0), layoutHeight - height)) : 0;
       const changed = $("chat").style.height !== height + "px";
-      if (changed) $("chat").style.height = height + "px";
-      if ($("chat").style.top !== top + "px") $("chat").style.top = top + "px";
-      if (changed && followingLatest) followConversation();
+      $("chat").style.height = height + "px"; $("chat").style.top = top + "px";
+      if (changed && followingLatest) follow();
     });
   }
-  window.visualViewport?.addEventListener("resize", fitChatViewport);
-  // resizeとscrollは順不同で届くため、毎回フォーカスと高さを合わせて判断する。
-  window.visualViewport?.addEventListener("scroll", fitChatViewport);
-  window.addEventListener("resize", fitChatViewport);
-  let gestureY = null;
-  document.addEventListener("touchstart", event => {
-    gestureY = event.touches.length === 1 ? event.touches[0].clientY : null;
-  }, { passive: true });
-  document.addEventListener("touchmove", event => {
-    if (!document.body.classList.contains("chatting") || gestureY === null || event.touches.length !== 1) return;
-    const y = event.touches[0].clientY;
-    const delta = y - gestureY;
-    gestureY = y;
-    // スクロール可能な領域だけにジェスチャーを渡す。上下端から外側へは伝播させない。
-    const scroller = event.target.closest("#messages, #answer, #storage-notice, dialog");
-    if (scroller) {
-      const bottom = scroller.scrollHeight - scroller.clientHeight;
-      if (bottom > 1 && ((delta < 0 && scroller.scrollTop < bottom - 1) || (delta > 0 && scroller.scrollTop > 1))) return;
-    }
-    if (event.cancelable) event.preventDefault();
+  window.visualViewport?.addEventListener("resize", fitViewport);
+  window.visualViewport?.addEventListener("scroll", fitViewport);
+  window.addEventListener("resize", fitViewport);
+  function cancelRecovery() { recoveryTimers.forEach(clearTimeout); recoveryTimers = []; }
+  function restoreAfterKeyboard() {
+    cancelRecovery(); document.body.classList.remove("keyboard-open");
+    const restore = () => { if ($("chat").hidden || document.activeElement === $("answer")) return; if (scrollY || scrollX) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); fitViewport(); };
+    restore(); recoveryTimers = [120, 350, 700].map(ms => setTimeout(restore, ms));
+  }
+  $("answer").addEventListener("focus", () => { cancelRecovery(); document.body.classList.add("keyboard-open"); fitViewport(); });
+  $("answer").addEventListener("blur", restoreAfterKeyboard);
+  window.addEventListener("pageshow", () => { if (document.activeElement !== $("answer")) restoreAfterKeyboard(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && document.activeElement !== $("answer")) restoreAfterKeyboard(); });
+  $("conversation-scroll").addEventListener("scroll", () => { const el = $("conversation-scroll"); followingLatest = el.scrollHeight - el.clientHeight - el.scrollTop < 40; }, { passive: true });
+  let pointer;
+  $("conversation-scroll").addEventListener("pointerdown", e => { pointer = { x: e.clientX, y: e.clientY }; });
+  $("conversation-scroll").addEventListener("pointerup", e => { if (pointer && !e.target.closest("button") && Math.hypot(pointer.x - e.clientX, pointer.y - e.clientY) < 10 && !window.getSelection()?.toString()) $("answer").blur(); pointer = null; });
+  $("conversation-scroll").addEventListener("pointercancel", () => { pointer = null; });
+  let touchY;
+  document.addEventListener("touchstart", e => { touchY = e.touches.length === 1 ? e.touches[0].clientY : null; }, { passive: true });
+  document.addEventListener("touchmove", e => {
+    if ($("chat").hidden || touchY == null || e.touches.length !== 1) return;
+    const delta = e.touches[0].clientY - touchY; touchY = e.touches[0].clientY;
+    const area = e.target.closest("#conversation-scroll, #answer, #storage-notice, dialog");
+    if (area) { const bottom = area.scrollHeight - area.clientHeight; if (bottom > 1 && ((delta < 0 && area.scrollTop < bottom - 1) || (delta > 0 && area.scrollTop > 1))) return; }
+    if (e.cancelable) e.preventDefault();
   }, { passive: false });
-  document.addEventListener("touchend", () => { gestureY = null; }, { passive: true });
-  document.addEventListener("touchcancel", () => { gestureY = null; }, { passive: true });
-  $("messages").addEventListener("scroll", () => {
-    const messages = $("messages");
-    followingLatest = messages.scrollHeight - messages.clientHeight - messages.scrollTop < 40;
-  }, { passive: true });
-  // スワイプによる読み返しとタップを区別する。
-  let touchStart;
-  $("messages").addEventListener("pointerdown", event => { touchStart = { x: event.clientX, y: event.clientY }; });
-  $("messages").addEventListener("pointerup", event => {
-    if (!event.target.closest("button") && touchStart && Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y) < 10 && !window.getSelection()?.toString()) $("answer").blur();
-    touchStart = null;
-  });
-  $("messages").addEventListener("pointercancel", () => { touchStart = null; });
-  function bubble(text, who, label, animate = false) {
-    const el = element("div", "bubble " + who + (animate ? " bubble-enter" : ""));
-    el.append(element("small", "", label), document.createTextNode(text));
-    $("messages").append(el);
-    $("messages").append(skipButton);
-    return el;
-  }
-  function renderChat(focus) {
-    $("messages").replaceChildren();
-    bubble("こんにちは😊 ここでは、心に浮かぶ景色を少しずつ集めます。うまく話そうとしなくて大丈夫。答えにくい問いは、スキップできます。", "guide", "探検の道しるべ");
-    state.answers.forEach((answer, i) => {
-      bubble(questions[i].text, "guide", questions[i].era + "の景色");
-      bubble(answer === null ? "この問いは、ひとまずスキップ" : answer, "user", "あなた");
-    });
-    const current = questions[state.answers.length];
-    bubble(current.text, "guide", current.era + "の景色");
-    updateProgress();
-    $("answer").value = state.draft;
-    $("count").textContent = state.draft.length + " / 2000";
-    resizeInput();
-    if (focus) $("chat-title").focus({ preventScroll: true });
-    followConversation();
-  }
+  for (const type of ["touchend", "touchcancel"]) document.addEventListener(type, () => { touchY = null; }, { passive: true });
+  function resizeInput() { $("answer").style.height = "44px"; $("answer").style.height = Math.min(110, $("answer").scrollHeight) + "px"; }
+  function updateControls() { $("send").disabled = busy || complete() || !$("answer").value.trim(); $("skip").disabled = busy; }
   function updateProgress() {
-    $("step-label").textContent = (state.answers.length + 1) + " / 6";
-    $("progress").value = state.answers.length;
+    const index = Math.min(state.answers.length, 5); const era = Math.floor(index / 2);
+    $("step-label").textContent = (complete() ? 6 : index + 1) + " / 6";
+    $("progress-bar").style.width = (complete() ? 100 : (index + 1) / 6 * 100) + "%";
+    $("chapter-number").textContent = "SCENE " + String(index + 1).padStart(2, "0") + " / 06";
+    $("chat-title").textContent = complete() ? "集まった景色を振り返る" : questions[index].era + "の景色";
+    $("chapter-caption").textContent = ["記憶に残っている、小さな道を歩きます", "いまの心と、自分の時間を眺めます", "まだ見ぬ、心地よい方角を思い描きます"][era];
+    document.querySelectorAll("[data-era]").forEach((el, i) => { el.classList.toggle("is-active", i === era); el.classList.toggle("is-done", complete() || i < era); });
+    $("answer-form").hidden = complete(); $("summary-cta").hidden = !complete(); $("skip").hidden = complete(); updateControls();
   }
-  function renderCollection() {
-    const collected = state.answers.filter(answer => answer !== null).length;
-    $("arrival-summary").textContent = collected ? "あなたの言葉から、" + collected + "つの景色が見つかりました。" : "今日は、余白の景色を持ち帰りましょう。";
-    $("scene-fragments").replaceChildren();
-    $("cards").replaceChildren();
-    const icons = ["❀", "✧", "☁", "♧", "☀", "✦"];
-    questions.forEach((q, i) => {
-      const answer = state.answers[i];
-      if (answer !== null) {
-        const fragment = element("span", "scene-fragment", answer.length > 28 ? answer.slice(0, 28) + "…" : answer);
-        fragment.style.setProperty("--order", i);
-        $("scene-fragments").append(fragment);
-      }
-      const scene = element("details", "scene-card era-" + Math.floor(i / 2));
-      scene.style.setProperty("--order", i);
-      const summary = element("summary", "");
-      const icon = element("span", "scene-icon", icons[i]); icon.setAttribute("aria-hidden", "true");
-      summary.append(element("span", "scene-era", q.era + " / " + String(i + 1).padStart(2, "0")), icon, element("h2", "", q.title), element("p", "scene-preview", answer === null ? "まだ余白のままの景色" : answer.length > 65 ? answer.slice(0, 65) + "…" : answer), element("span", "scene-open", "言葉をひらく ＋"));
-      scene.append(summary, element("p", "scene-question", q.text), element("p", "words", answer === null ? "何も浮かばない日も、そのままで。ここには余白を残しました。" : answer));
-      $("cards").append(scene);
+  function renderChat() {
+    $("messages").replaceChildren();
+    addMessage("こんにちは。ここでは、あなたの足元をそっと照らす懐中電灯のように、景色集めを案内します。ひと言でも、思いつくままでも。答えにくい問いはスキップして大丈夫です。", "guide");
+    state.answers.forEach((answer, i) => { addMessage(questions[i].text, "guide"); addMessage(answer === null ? "この問いは、ひとまずスキップ" : answer, "user"); });
+    if (complete()) addMessage("景色が集まりました😊", "guide");
+    else addMessage(questions[state.answers.length].text, "guide");
+    $("answer").value = state.draft; $("count").textContent = state.draft.length + " / 2000";
+    resizeInput(); updateProgress(); follow();
+  }
+  function renderResult() {
+    $("cards").replaceChildren(); $("scene-fragments").replaceChildren();
+    ["過去", "現在", "未来"].forEach((era, index) => {
+      const card = node("article", "scene-item scene-item--" + ["past", "now", "future"][index]);
+      card.append(node("span", "", era)); const content = node("div");
+      questions.forEach((q, i) => { if (q.era !== era) return; content.append(node("h3", "", q.title), node("p", "words", state.answers[i] === null ? "この景色は、まだ余白のまま。" : state.answers[i])); });
+      card.append(content); $("cards").append(card);
     });
+    state.answers.forEach((answer, i) => { if (answer === null) return; const fragment = node("span", "collection-fragment", answer.length > 30 ? answer.slice(0, 30) + "…" : answer); fragment.style.setProperty("--order", i); $("scene-fragments").append(fragment); });
+    const empty = state.answers.every(a => a === null);
+    $("result-title").textContent = empty ? "今日は、余白を持ち帰ろう。" : "景色が集まりました😊";
+    if (empty) $("scene-fragments").append(node("p", "", "言葉が浮かばない日も、そのままで大丈夫。"));
   }
-  function render(focus = false) {
-    const completed = state.answers.length === questions.length;
-    $("welcome").hidden = state.started;
-    $("chat").hidden = !state.started || completed;
-    $("result").hidden = !state.started || !completed;
-    $("arrival").hidden = !state.started || !completed;
-    $("delete").hidden = !state.started && !storageBroken;
-    const chatting = state.started && !completed;
-    document.body.classList.toggle("chatting", chatting);
-    document.documentElement.classList.toggle("chatting", chatting);
-    if (chatting && window.scrollY !== 0) window.scrollTo({ top: 0, behavior: "instant" });
-    (chatting ? $("settings-actions") : deleteHome).append($("delete"));
-    if (chatting) fitChatViewport();
-    if (!state.started) return;
-    if (completed) {
-      renderCollection();
-      if (focus) { $("answer").blur(); $("arrival-title").focus({ preventScroll: true }); $("arrival").scrollIntoView({ block: "start", behavior: "instant" }); }
-      return;
+  function show(view, focus = true) {
+    if (view !== "chat") {
+      // 送信直後に休憩しても、保存済み回答から再構築できる。古い返答タイマーは残さない。
+      clearTimeout(replyTimer); busy = false;
+      $("answer").blur();
     }
-    renderChat(focus);
+    ["welcome", "chat", "result"].forEach(id => { $(id).hidden = id !== view; });
+    document.body.classList.toggle("chatting", view === "chat"); document.documentElement.classList.toggle("chatting", view === "chat");
+    if (view === "welcome") { $("start").firstChild.textContent = complete() ? "集まった景色を見る" : state.started ? "探検の続きを歩く" : "探検をはじめる"; $("home-record").hidden = !state.started && !storageBroken; if (focus) { $("start").focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: "instant" }); } }
+    if (view === "chat") { fitViewport(); renderChat(); if (focus) $("chat-title").focus({ preventScroll: true }); }
+    if (view === "result") { renderResult(); $("result-scroll").scrollTop = 0; if (focus) $("result-title").focus({ preventScroll: true }); }
   }
-
-  $("start").addEventListener("click", () => { state.started = true; save(); render(true); });
-  $("answer").addEventListener("input", () => {
-    state.draft = $("answer").value;
-    $("answer").setCustomValidity("");
-    $("count").textContent = state.draft.length + " / 2000";
-    resizeInput();
-    save();
-  });
-  function resizeInput() {
-    $("answer").style.height = "44px";
-    $("answer").style.height = Math.min(88, $("answer").scrollHeight) + "px";
-  }
-  let keyboardRecoveryTimers = [];
-  function cancelKeyboardRecovery() {
-    keyboardRecoveryTimers.forEach(clearTimeout);
-    keyboardRecoveryTimers = [];
-  }
-  function restoreChatAfterKeyboard() {
-    cancelKeyboardRecovery();
-    if ($("chat").hidden) return;
-    document.body.classList.remove("keyboard-open");
-    const restore = () => {
-      if ($("chat").hidden || document.activeElement === $("answer")) return;
-      // blur直後はSafariのキーボード終了アニメーション中なので、終了後も再確認する。
-      // 会話欄のscrollTopと書きかけは変更しない。
-      $("chat").style.top = "0px";
-      if (window.scrollX || window.scrollY) window.scrollTo({ left: 0, top: 0, behavior: "instant" });
-      fitChatViewport();
-    };
-    restore();
-    keyboardRecoveryTimers = [120, 350, 700].map(delay => setTimeout(restore, delay));
-  }
-  $("answer").addEventListener("focus", () => {
-    cancelKeyboardRecovery();
-    document.body.classList.add("keyboard-open");
-    fitChatViewport();
-  });
-  $("answer").addEventListener("blur", restoreChatAfterKeyboard);
-  window.addEventListener("pageshow", () => {
-    if (document.activeElement !== $("answer")) restoreChatAfterKeyboard();
-  });
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && document.activeElement !== $("answer")) restoreChatAfterKeyboard();
-  });
-  // 入力欄の外をドラッグしてもページ全体のラバーバンドを起こさない。
-  $("answer-form").addEventListener("touchmove", event => {
-    if (event.target !== $("answer")) event.preventDefault();
-  }, { passive: false });
-  skipButton.addEventListener("pointerdown", event => {
-    if (document.activeElement === $("answer")) event.preventDefault();
-  });
   function advance(answer) {
-    if (replying || !state.started || state.answers.length >= questions.length) return;
-    state.answers.push(answer); state.draft = ""; $("answer").setCustomValidity(""); save();
-    $("answer").value = ""; resizeInput(); $("count").textContent = "0 / 2000";
-    lockComposer(true);
-    bubble(answer === null ? "この問いは、ひとまずスキップ" : answer, "user", "あなた", true);
-    const waiting = bubble("次の問いをひらいています …", "guide", "景色集め", true);
-    waiting.classList.add("waiting");
-    followConversation();
-    replyTimer = window.setTimeout(() => {
-      waiting.remove(); lockComposer(false);
-      if (state.answers.length === questions.length) { render(true); return; }
-      const current = questions[state.answers.length];
-      bubble(current.text, "guide", current.era + "の景色", true);
-      updateProgress(); followConversation();
-    }, reducedMotion() ? 100 : 700);
+    if (busy || complete() || !state.started) return;
+    state.answers.push(answer); state.draft = ""; save();
+    busy = true; $("answer").value = ""; $("count").textContent = "0 / 2000"; resizeInput(); updateControls();
+    addMessage(answer === null ? "この問いは、ひとまずスキップ" : answer, "user", true);
+    const waiting = node("div", "thinking-dots waiting"); waiting.setAttribute("role", "status"); waiting.setAttribute("aria-label", "次の道しるべをひらいています"); waiting.append(node("i"), node("i"), node("i")); $("messages").append(waiting); follow();
+    replyTimer = setTimeout(() => {
+      waiting.remove(); busy = false;
+      addMessage(complete() ? "景色が集まりました😊" : questions[state.answers.length].text, "guide", true);
+      updateProgress(); follow();
+    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 50 : 500);
   }
-
-  $("answer-form").addEventListener("submit", event => {
-    event.preventDefault();
-    const answer = $("answer").value.trim();
-    if (!answer) { $("answer").setCustomValidity("言葉を入力するか、スキップを選んでください。"); $("answer").reportValidity(); return; }
-    advance(answer);
-  });
-  $("answer-form").querySelector("[type=submit]").addEventListener("pointerdown", event => {
-    if (document.activeElement === $("answer")) event.preventDefault();
-  });
+  $("start").addEventListener("click", () => { state.started = true; save(); show(complete() ? "result" : "chat"); });
+  document.querySelector(".flyer-logo").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+  document.querySelectorAll("[data-home]").forEach(el => el.addEventListener("click", () => show("welcome")));
+  $("result-home").addEventListener("click", () => show("welcome"));
+  $("show-summary").addEventListener("click", () => show("result"));
+  $("back-chat").addEventListener("click", () => show("chat"));
+  $("answer").addEventListener("input", () => { state.draft = $("answer").value; $("answer").setCustomValidity(""); $("count").textContent = state.draft.length + " / 2000"; resizeInput(); updateControls(); save(); });
+  $("answer-form").addEventListener("submit", event => { event.preventDefault(); const answer = $("answer").value.trim(); if (answer && answer.length <= 2000) advance(answer); });
+  // IME確定のEnterや改行を送信と取り違えない。送信はボタン、またはCtrl/Cmd+Enter。
+  $("answer").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); $("answer-form").requestSubmit(); } });
   $("skip").addEventListener("click", () => advance(null));
-  $("open-journal").addEventListener("click", () => {
-    $("answer").blur();
-    $("journal-scenes").replaceChildren();
-    state.answers.forEach((answer, i) => {
-      const scene = element("article", "journal-scene");
-      scene.append(element("h3", "", questions[i].era + " · " + questions[i].title), element("p", "", answer === null ? "この景色は、まだ余白のまま。" : answer));
-      $("journal-scenes").append(scene);
-    });
-    if (!state.answers.length) $("journal-scenes").append(element("p", "", "見つけた景色は、ここに少しずつ増えていきます。"));
-    $("journal-dialog").showModal();
-  });
-  $("open-settings").addEventListener("click", () => { $("answer").blur(); $("settings-dialog").showModal(); });
-  $("open-help").addEventListener("click", () => { $("answer").blur(); $("help-dialog").showModal(); });
-  $("delete").addEventListener("click", () => { $("settings-dialog").close(); $("delete-error").hidden = true; $("delete-dialog").showModal(); $("cancel-delete").focus(); });
+  for (const el of [$("skip"), $("send")]) el.addEventListener("pointerdown", e => { if (document.activeElement === $("answer")) e.preventDefault(); });
+  function openDelete(e) { deleteOpener = e.currentTarget; $("answer").blur(); $("delete-error").hidden = true; $("delete-dialog").showModal(); $("cancel-delete").focus(); }
+  document.querySelectorAll("[data-delete], #home-record").forEach(el => el.addEventListener("click", openDelete));
   $("cancel-delete").addEventListener("click", () => $("delete-dialog").close());
+  $("delete-dialog").addEventListener("close", () => { if (deleteOpener && !deleteOpener.closest("[hidden]")) deleteOpener.focus({ preventScroll: true }); });
   $("confirm-delete").addEventListener("click", () => {
     try { localStorage.removeItem(KEY); }
-    catch { $("delete-error").textContent = "ブラウザの保存領域にアクセスできず、削除を確認できませんでした。ブラウザの設定からサイトデータを削除してください。"; $("delete-error").hidden = false; return; }
-    clearTimeout(replyTimer); lockComposer(false);
-    state = fresh(); storageBroken = false;
-    $("storage-notice").hidden = true;
-    $("answer").value = ""; $("answer").setCustomValidity("");
-    $("messages").replaceChildren(skipButton); $("cards").replaceChildren(); $("scene-fragments").replaceChildren();
-    $("delete-dialog").close(); render(); $("start").focus();
+    catch { $("delete-error").textContent = "保存領域にアクセスできず、削除を確認できませんでした。ブラウザの設定からこのサイトのデータを削除してください。"; $("delete-error").hidden = false; return; }
+    clearTimeout(replyTimer); cancelRecovery(); busy = false; state = fresh(); storageBroken = false; deleteOpener = null;
+    $("answer").value = ""; $("messages").replaceChildren(); $("cards").replaceChildren(); $("scene-fragments").replaceChildren(); $("storage-notice").hidden = true;
+    $("delete-dialog").close(); show("welcome");
   });
-  render();
+  show(state.started ? complete() ? "result" : "chat" : "welcome", false);
 })();
